@@ -24,17 +24,7 @@ public class JobExecutor implements AutoCloseable {
     }
 
     public void enqueueJob(Job job) {
-        if (executorService.isShutdown()) {
-            logger.debug("Not enqueuing {} job, shutting down", job.getClass().getSimpleName());
-            return;
-        }
-
-        synchronized (queue) {
-            logger.trace("Enqueuing {} job", job.getClass().getSimpleName());
-            queue.add(job);
-        }
-
-        runNextJob();
+        // Receive-only builds never run background profile, media or storage-sync jobs.
     }
 
     private void runNextJob() {

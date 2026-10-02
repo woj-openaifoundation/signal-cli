@@ -84,31 +84,31 @@ public class ListContactsCommand implements JsonRpcLocalCommand {
                                 .println(
                                         "PNI: {} Given name: {} Family name: {}, Nick name: {} Nick given name: {} Nick family name {} Note: {} Archived: {} Hidden: {} Profile sharing: {} About: {} About Emoji: {} Unregistered: {}",
                                         r.getAddress().pni().orElse(""),
-                                        Optional.ofNullable(r.getContact().givenName()).orElse(""),
-                                        Optional.ofNullable(r.getContact().familyName()).orElse(""),
-                                        Optional.ofNullable(r.getContact().nickName()).orElse(""),
-                                        Optional.ofNullable(r.getContact().nickNameGivenName()).orElse(""),
-                                        Optional.ofNullable(r.getContact().nickNameFamilyName()).orElse(""),
-                                        Optional.ofNullable(r.getContact().note()).orElse(""),
-                                        r.getContact().isArchived(),
-                                        r.getContact().isHidden(),
-                                        r.getContact().isProfileSharingEnabled(),
-                                        Optional.ofNullable(r.getProfile().getAbout()).orElse(""),
-                                        Optional.ofNullable(r.getProfile().getAboutEmoji()).orElse(""),
-                                        r.getContact().unregisteredTimestamp() != null);
+                                        Optional.ofNullable(contact.givenName()).orElse(""),
+                                        Optional.ofNullable(contact.familyName()).orElse(""),
+                                        Optional.ofNullable(contact.nickName()).orElse(""),
+                                        Optional.ofNullable(contact.nickNameGivenName()).orElse(""),
+                                        Optional.ofNullable(contact.nickNameFamilyName()).orElse(""),
+                                        Optional.ofNullable(contact.note()).orElse(""),
+                                        contact.isArchived(),
+                                        contact.isHidden(),
+                                        contact.isProfileSharingEnabled(),
+                                        Optional.ofNullable(profile.getAbout()).orElse(""),
+                                        Optional.ofNullable(profile.getAboutEmoji()).orElse(""),
+                                        contact.unregisteredTimestamp() != null);
                     }
                     if (internal) {
                         writer.indentedWriter()
                                 .println(
                                         "Capabilities: {} Unidentified access mode: {} Shares number: {} Discoverable by number: {}",
-                                        r.getProfile().getCapabilities().stream().map(Enum::name).toList(),
-                                        Optional.ofNullable(r.getProfile().getUnidentifiedAccessMode()
+                                        profile.getCapabilities().stream().map(Enum::name).toList(),
+                                        Optional.ofNullable(profile.getUnidentifiedAccessMode()
                                                 == Profile.UnidentifiedAccessMode.UNKNOWN
                                                 ? null
-                                                : r.getProfile().getUnidentifiedAccessMode().name()).orElse(""),
-                                        r.getProfile().getPhoneNumberSharingMode() == null
+                                                : profile.getUnidentifiedAccessMode().name()).orElse(""),
+                                        profile.getPhoneNumberSharingMode() == null
                                                 ? ""
-                                                : String.valueOf(r.getProfile().getPhoneNumberSharingMode()
+                                                : String.valueOf(profile.getPhoneNumberSharingMode()
                                                                  == PhoneNumberSharingMode.EVERYBODY),
                                         r.getDiscoverable() == null ? "" : String.valueOf(r.getDiscoverable()));
                     }
@@ -118,19 +118,20 @@ public class ListContactsCommand implements JsonRpcLocalCommand {
                 final var jsonContacts = recipients.stream().map(r -> {
                     final var address = r.getAddress();
                     final var contact = r.getContact() == null ? Contact.newBuilder().build() : r.getContact();
+                    final var profile = r.getProfile() == null ? Profile.newBuilder().build() : r.getProfile();
                     final var jsonInternal = !internal
                             ? null
-                            : new JsonContact.JsonInternal(r.getProfile()
+                            : new JsonContact.JsonInternal(profile
                                                            .getCapabilities()
                                                            .stream()
                                                            .map(Enum::name)
                                                            .toList(),
-                                    r.getProfile().getUnidentifiedAccessMode() == Profile.UnidentifiedAccessMode.UNKNOWN
+                                    profile.getUnidentifiedAccessMode() == Profile.UnidentifiedAccessMode.UNKNOWN
                                     ? null
-                                            : r.getProfile().getUnidentifiedAccessMode().name(),
-                                    r.getProfile().getPhoneNumberSharingMode() == null
+                                            : profile.getUnidentifiedAccessMode().name(),
+                                    profile.getPhoneNumberSharingMode() == null
                                     ? null
-                                            : r.getProfile().getPhoneNumberSharingMode()
+                                            : profile.getPhoneNumberSharingMode()
                                               == PhoneNumberSharingMode.EVERYBODY,
                                     r.getDiscoverable());
                     return new JsonContact(address.number().orElse(null),
@@ -148,20 +149,20 @@ public class ListContactsCommand implements JsonRpcLocalCommand {
                             contact.isBlocked(),
                             contact.isHidden(),
                             contact.messageExpirationTime(),
-                            r.getContact().isProfileSharingEnabled(),
-                            r.getContact().unregisteredTimestamp() != null,
+                            contact.isProfileSharingEnabled(),
+                            contact.unregisteredTimestamp() != null,
                             r.getProfile() == null
                                     ? null
-                                    : new JsonContact.JsonProfile(r.getProfile().getLastUpdateTimestamp(),
-                                            r.getProfile().getGivenName(),
-                                            r.getProfile().getFamilyName(),
-                                            r.getProfile().getAbout(),
-                                            r.getProfile().getAboutEmoji(),
-                                            r.getProfile().getAvatarUrlPath() != null,
-                                            r.getProfile().getMobileCoinAddress() == null
+                                    : new JsonContact.JsonProfile(profile.getLastUpdateTimestamp(),
+                                            profile.getGivenName(),
+                                            profile.getFamilyName(),
+                                            profile.getAbout(),
+                                            profile.getAboutEmoji(),
+                                            profile.getAvatarUrlPath() != null,
+                                            profile.getMobileCoinAddress() == null
                                             ? null
                                                     : Base64.getEncoder()
-                                                      .encodeToString(r.getProfile().getMobileCoinAddress())),
+                                                      .encodeToString(profile.getMobileCoinAddress())),
                             jsonInternal);
                 }).toList();
                 writer.write(jsonContacts);

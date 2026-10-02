@@ -2,7 +2,6 @@ package org.asamk.signal.commands;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 
-import net.sourceforge.argparse4j.impl.Arguments;
 import net.sourceforge.argparse4j.inf.Namespace;
 import net.sourceforge.argparse4j.inf.Subparser;
 
@@ -50,21 +49,7 @@ public class ReceiveCommand implements LocalCommand, JsonRpcSingleCommand<Receiv
                 .type(int.class)
                 .setDefault(-1)
                 .help("Maximum number of messages to receive, before returning.");
-        subparser.addArgument("--ignore-attachments")
-                .help("Don’t download attachments of received messages.")
-                .action(Arguments.storeTrue());
-        subparser.addArgument("--ignore-stories")
-                .help("Don’t receive story messages from the server.")
-                .action(Arguments.storeTrue());
-        subparser.addArgument("--ignore-avatars")
-                .help("Don't download avatars of received messages.")
-                .action(Arguments.storeTrue());
-        subparser.addArgument("--ignore-stickers")
-                .help("Don't download sticker packs of received messages.")
-                .action(Arguments.storeTrue());
-        subparser.addArgument("--send-read-receipts")
-                .help("Send read receipts for all incoming data messages (in addition to the default delivery receipts)")
-                .action(Arguments.storeTrue());
+        // No switches can enable media downloads, stories, or read receipts.
     }
 
     @Override
@@ -81,6 +66,9 @@ public class ReceiveCommand implements LocalCommand, JsonRpcSingleCommand<Receiv
         Shutdown.installHandler();
         final var timeout = ns.getDouble("timeout");
         final var maxMessagesRaw = ns.getInt("max-messages");
+        if (Boolean.TRUE.equals(ns.getBoolean("send-read-receipts"))) {
+            throw new UserErrorException("Read receipts are disabled in this distribution.");
+        }
         m.setReceiveConfig(getReceiveConfig(ns));
         try {
             final var handler = switch (outputWriter) {
@@ -112,6 +100,7 @@ public class ReceiveCommand implements LocalCommand, JsonRpcSingleCommand<Receiv
         final var timeout = request.timeout() == null ? 3.0 : request.timeout();
         final var maxMessagesRaw = request.maxMessages() == null ? -1 : request.maxMessages();
 
+        m.setReceiveConfig(getReceiveConfig(null));
         try {
             final var messages = new ArrayList<>();
             final var handler = new JsonReceiveMessageHandler(m, messages::add);

@@ -9,8 +9,6 @@ import org.asamk.signal.manager.actions.RetrieveDeviceNameAction;
 import org.asamk.signal.manager.actions.RetrieveProfileAction;
 import org.asamk.signal.manager.actions.SendGroupInfoAction;
 import org.asamk.signal.manager.actions.SendGroupInfoRequestAction;
-import org.asamk.signal.manager.actions.SendProfileKeyAction;
-import org.asamk.signal.manager.actions.SendReceiptAction;
 import org.asamk.signal.manager.actions.SendRetryMessageRequestAction;
 import org.asamk.signal.manager.actions.SendSyncBlockedListAction;
 import org.asamk.signal.manager.actions.SendSyncConfigurationAction;
@@ -18,7 +16,6 @@ import org.asamk.signal.manager.actions.SendSyncContactsAction;
 import org.asamk.signal.manager.actions.SendSyncGroupsAction;
 import org.asamk.signal.manager.actions.SendSyncKeysAction;
 import org.asamk.signal.manager.actions.SyncStorageDataAction;
-import org.asamk.signal.manager.actions.UpdateAccountAttributesAction;
 import org.asamk.signal.manager.api.GroupId;
 import org.asamk.signal.manager.api.GroupNotFoundException;
 import org.asamk.signal.manager.api.MessageEnvelope;
@@ -62,7 +59,6 @@ import org.whispersystems.signalservice.api.messages.SignalServiceGroup;
 import org.whispersystems.signalservice.api.messages.SignalServiceGroupContext;
 import org.whispersystems.signalservice.api.messages.SignalServiceGroupV2;
 import org.whispersystems.signalservice.api.messages.SignalServicePniSignatureMessage;
-import org.whispersystems.signalservice.api.messages.SignalServiceReceiptMessage;
 import org.whispersystems.signalservice.api.messages.SignalServiceStoryMessage;
 import org.whispersystems.signalservice.api.messages.calls.SignalServiceCallMessage;
 import org.whispersystems.signalservice.api.messages.multidevice.SignalServiceSyncMessage;
@@ -260,65 +256,41 @@ public final class IncomingMessageHandler {
             final Exception exception
     ) {
         if (content != null) {
-            // Store uuid if we don't have it already
-            // address/uuid is validated by unidentified sender certificate
-
+            // Identity mappings and sender keys are protocol state required to decrypt later messages.
             boolean handledPniSignature = false;
             if (content.getPniSignatureMessage().isPresent()) {
-                final var message = content.getPniSignatureMessage().get();
                 final var senderAddress = getSenderAddress(envelope, content);
                 if (senderAddress != null) {
-                    handledPniSignature = handlePniSignatureMessage(message, senderAddress);
+                    handledPniSignature = handlePniSignatureMessage(content.getPniSignatureMessage().get(), senderAddress);
                 }
             }
             if (!handledPniSignature) {
                 account.getRecipientTrustedResolver().resolveRecipientTrusted(content.getSender());
             }
-        }
-        if (envelope.isReceipt()) {
-            final var senderDeviceAddress = getSender(envelope, content);
-            final var sender = senderDeviceAddress.serviceId();
-            final var senderDeviceId = senderDeviceAddress.deviceId();
-            account.getMessageSendLogStore().deleteEntryForRecipient(envelope.getTimestamp(), sender, senderDeviceId);
-        }
-
-        var notAllowedToSendToGroup = isNotAllowedToSendToGroup(envelope, content);
-        final var groupContext = getGroupContext(content);
-        if (groupContext != null && groupContext.getGroupV2().isPresent()) {
-            handleGroupV2Context(groupContext.getGroupV2().get(), receiveConfig.ignoreAvatars());
-        }
-        // Check again in case the user just joined the group
-        notAllowedToSendToGroup = notAllowedToSendToGroup && isNotAllowedToSendToGroup(envelope, content);
-
-        if (isMessageBlocked(envelope, content)) {
-            logger.info("Ignoring a message from blocked user/group: {}", envelope.getTimestamp());
-            return List.of();
-        } else if (notAllowedToSendToGroup) {
-            final var senderAddress = getSenderAddress(envelope, content);
-            logger.info("Ignoring a group message from an unauthorized sender (no member or admin): {} {}",
-                    senderAddress == null ? null : senderAddress.getIdentifier(),
-                    envelope.getTimestamp());
-            return List.of();
-        } else {
-            List<HandleAction> actions;
-            Map<String, String> longTexts;
-            if (content != null) {
-                final var results = handleMessage(envelope, content, receiveConfig);
-                actions = results.first();
-                longTexts = results.second();
-            } else {
-                actions = List.of();
-                longTexts = Map.of();
+            if (content.getSenderKeyDistributionMessage().isPresent()) {
+                final var sender = getSender(envelope, content);
+                new SignalGroupSessionBuilder(dependencies.getSessionLock(),
+                        new GroupSessionBuilder(account.getSenderKeyStore())).process(
+                        sender.serviceId().toProtocolAddress(sender.deviceId()),
+                        content.getSenderKeyDistributionMessage().get());
             }
-            handler.handleMessage(MessageEnvelope.from(envelope,
-                    content,
-                    longTexts,
-                    account.getRecipientResolver(),
-                    account.getRecipientAddressResolver(),
-                    context.getAttachmentHelper()::getAttachmentFile,
-                    exception), exception);
-            return actions;
+            // Stories are never requested or emitted. No contact/group/profile/media handling runs.
+            if (content.getStoryMessage().isPresent()
+                    || content.getSyncMessage().flatMap(s -> s.getSent()).flatMap(s -> s.getStoryMessage()).isPresent()) {
+                return List.of();
+            }
         }
+        if (isMessageBlocked(envelope, content)) {
+            return List.of();
+        }
+        handler.handleMessage(MessageEnvelope.from(envelope,
+                content,
+                Map.of(),
+                account.getRecipientResolver(),
+                account.getRecipientAddressResolver(),
+                ignored -> null,
+                exception), exception);
+        return List.of();
     }
 
     public Pair<List<HandleAction>, Map<String, String>> handleMessage(
@@ -326,113 +298,7 @@ public final class IncomingMessageHandler {
             SignalServiceContent content,
             ReceiveConfig receiveConfig
     ) {
-        final var actions = new ArrayList<HandleAction>();
-        final var longTexts = new HashMap<String, String>();
-        final var senderDeviceAddress = getSender(envelope, content);
-        final var sender = senderDeviceAddress.recipientId();
-        final var senderServiceId = senderDeviceAddress.serviceId();
-        final var senderDeviceId = senderDeviceAddress.deviceId();
-        final DeviceAddress destination;
-        try {
-            destination = getDestination(envelope);
-        } catch (InvalidMessageException e) {
-            throw new AssertionError(e);
-        }
-
-        if (account.getPni().equals(destination.serviceId)) {
-            account.getRecipientStore().markNeedsPniSignature(sender, true);
-        } else if (account.getAci().equals(destination.serviceId)) {
-            account.getRecipientStore().markNeedsPniSignature(sender, false);
-        }
-
-        if (content.getReceiptMessage().isPresent()) {
-            final var message = content.getReceiptMessage().get();
-            if (message.isDeliveryReceipt()) {
-                account.getMessageSendLogStore()
-                        .deleteEntriesForRecipient(message.getTimestamps(), senderServiceId, senderDeviceId);
-            }
-        }
-
-        if (content.getSenderKeyDistributionMessage().isPresent()) {
-            final var message = content.getSenderKeyDistributionMessage().get();
-            final var protocolAddress = senderServiceId.toProtocolAddress(senderDeviceId);
-            logger.debug("Received a sender key distribution message for distributionId {} from {}",
-                    message.getDistributionId(),
-                    protocolAddress);
-            new SignalGroupSessionBuilder(dependencies.getSessionLock(),
-                    new GroupSessionBuilder(account.getSenderKeyStore())).process(protocolAddress, message);
-        }
-
-        if (content.getDecryptionErrorMessage().isPresent()) {
-            var message = content.getDecryptionErrorMessage().get();
-            logger.debug("Received a decryption error message from {}.{} (resend request for {})",
-                    sender,
-                    senderDeviceId,
-                    message.getTimestamp());
-            if (message.getDeviceId() == account.getDeviceId()) {
-                handleDecryptionErrorMessage(actions,
-                        sender,
-                        senderServiceId,
-                        senderDeviceId,
-                        message,
-                        destination.serviceId());
-            } else {
-                logger.debug("Request is for another one of our devices");
-            }
-        }
-
-        if (content.getDataMessage().isPresent() || content.getEditMessage().isPresent()) {
-            var message = content.getDataMessage().isPresent()
-                    ? content.getDataMessage().get()
-                    : content.getEditMessage().get().getDataMessage();
-
-            if (content.isNeedsReceipt()) {
-                actions.add(new SendReceiptAction(sender,
-                        SignalServiceReceiptMessage.Type.DELIVERY,
-                        message.getTimestamp()));
-            } else {
-                // Message wasn't sent as unidentified sender message
-                final var contact = context.getAccount().getContactStore().getContact(sender);
-                if (account.isPrimaryDevice()
-                        && contact != null
-                        && !contact.isBlocked()
-                        && contact.isProfileSharingEnabled()) {
-                    actions.add(UpdateAccountAttributesAction.create());
-                    actions.add(new SendProfileKeyAction(sender));
-                }
-            }
-            if (receiveConfig.sendReadReceipts()) {
-                actions.add(new SendReceiptAction(sender,
-                        SignalServiceReceiptMessage.Type.READ,
-                        message.getTimestamp()));
-            }
-
-            final var dataResults = handleSignalServiceDataMessage(message,
-                    false,
-                    senderDeviceAddress,
-                    destination,
-                    receiveConfig);
-            actions.addAll(dataResults.first());
-            longTexts.putAll(dataResults.second());
-        }
-
-        if (content.getStoryMessage().isPresent()) {
-            final var message = content.getStoryMessage().get();
-            actions.addAll(handleSignalServiceStoryMessage(message, sender, receiveConfig));
-        }
-
-        if (content.getSyncMessage().isPresent()) {
-            var syncMessage = content.getSyncMessage().get();
-            final var syncResults = handleSyncMessage(envelope, syncMessage, senderDeviceAddress, receiveConfig);
-            actions.addAll(syncResults.first());
-            longTexts.putAll(syncResults.second());
-        }
-
-        if (content.getCallMessage().isPresent()) {
-            handleCallMessage(content.getCallMessage().get(), sender, senderDeviceId);
-        }
-
-        return new Pair<>(actions, longTexts);
+        return new Pair<>(List.of(), Map.of());
     }
 
     private void handleCallMessage(

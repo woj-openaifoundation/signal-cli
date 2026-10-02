@@ -1,4 +1,20 @@
-# signal-cli
+# signal-cli: read-only context fork
+
+This fork exposes only on-demand receiving and local metadata queries. Sending,
+editing, RPC, daemon mode, message caching, media downloads and application logs
+are disabled. It is based on upstream **v0.14.8**.
+
+**Read [READ_ONLY.md](READ_ONLY.md) for the actual command surface, installation,
+and privacy boundaries.** Cryptographic/account state still persists, and a caller
+such as Codex controls retention of the emitted text. This is not a zero-retention
+system and does not provide access to the full history on your phone.
+
+The upstream documentation below is retained for provenance. Its sending,
+registration, daemon and installation instructions do not describe this fork.
+
+---
+
+# Upstream signal-cli
 
 signal-cli is a commandline interface for the [Signal messenger](https://signal.org/).
 It supports registering, verifying, sending and receiving messages.

@@ -264,14 +264,7 @@ public class ProvisioningManagerImpl implements ProvisioningManager, Closeable {
                     logger.error("Failed to refresh pre keys.", e);
                 }
 
-                logger.debug("Requesting sync data");
-                try {
-                    m.requestAllSyncData();
-                } catch (Exception e) {
-                    logger.error(
-                            "Failed to request sync messages from linked device, data can be requested again with `sendSyncRequest`.",
-                            e);
-                }
+                // Do not request contact, group, profile or configuration sync content.
 
                 if (newManagerListener != null) {
                     newManagerListener.accept(m);

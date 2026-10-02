@@ -1,143 +1,18 @@
 package org.asamk.signal.logging;
 
-import java.io.File;
-
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
-import ch.qos.logback.classic.PatternLayout;
-import ch.qos.logback.classic.jul.LevelChangePropagator;
 import ch.qos.logback.classic.spi.Configurator;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.ConsoleAppender;
-import ch.qos.logback.core.FileAppender;
-import ch.qos.logback.core.Layout;
-import ch.qos.logback.core.encoder.LayoutWrappingEncoder;
-import ch.qos.logback.core.filter.Filter;
 import ch.qos.logback.core.spi.ContextAwareBase;
-import ch.qos.logback.core.spi.FilterReply;
 
+/** Never attach a logger to a file or console in the context-only distribution. */
 public class LogConfigurator extends ContextAwareBase implements Configurator {
 
-    private static int verboseLevel = 0;
-    private static File logFile = null;
-    private static boolean scrubSensitiveInformation = false;
-
-    public static void setVerboseLevel(int verboseLevel) {
-        LogConfigurator.verboseLevel = verboseLevel;
-    }
-
-    public static void setLogFile(File logFile) {
-        LogConfigurator.logFile = logFile;
-    }
-
-    public static void setScrubSensitiveInformation(final boolean scrubSensitiveInformation) {
-        LogConfigurator.scrubSensitiveInformation = scrubSensitiveInformation;
-    }
-
     @Override
-    public ExecutionStatus configure(LoggerContext lc) {
-        lc.addListener(new LevelChangePropagator() {{
-            setContext(lc);
-        }});
-        final var rootLogger = lc.getLogger(Logger.ROOT_LOGGER_NAME);
-
-        final var defaultLevel = verboseLevel > 2 ? Level.TRACE : verboseLevel > 0 ? Level.INFO : Level.WARN;
-        rootLogger.setLevel(defaultLevel);
-
-        final var consoleLayout = verboseLevel == 0 || logFile != null
-                ? createSimpleLoggingLayout(lc)
-                : createDetailedLoggingLayout(lc);
-        final var consoleAppender = createLoggingConsoleAppender(lc, createLayoutWrappingEncoder(consoleLayout));
-        rootLogger.addAppender(consoleAppender);
-
-        lc.getLogger("org.asamk")
-                .setLevel(verboseLevel > 1 ? Level.TRACE : verboseLevel > 0 ? Level.DEBUG : Level.INFO);
-        lc.getLogger("org.asamk.Signal")
-                .setLevel(verboseLevel > 2 ? Level.TRACE : verboseLevel > 1 ? Level.INFO : Level.WARN);
-        lc.getLogger("com.zaxxer.hikari.pool.PoolBase")
-                .setLevel(verboseLevel > 2 ? Level.TRACE : verboseLevel > 1 ? Level.INFO : Level.WARN);
-        lc.getLogger("org.sqlite.core.NativeDB")
-                .setLevel(verboseLevel > 3 ? Level.TRACE : verboseLevel > 1 ? Level.INFO : Level.WARN);
-
-        if (logFile != null) {
-            consoleAppender.addFilter(new Filter<>() {
-                @Override
-                public FilterReply decide(final ILoggingEvent event) {
-                    return !"LibSignal".equals(event.getLoggerName())
-                            && !"LibSignalService".equals(event.getLoggerName())
-                            && (
-                            event.getLevel().isGreaterOrEqual(Level.WARN) || (
-                                    event.getLevel().isGreaterOrEqual(Level.INFO) && event.getLoggerName()
-                                            .startsWith("org.asamk")
-                            )
-                    )
-
-                            ? FilterReply.NEUTRAL : FilterReply.DENY;
-                }
-            });
-
-            final var fileLayout = createDetailedLoggingLayout(lc);
-            final var fileAppender = createLoggingFileAppender(lc, createLayoutWrappingEncoder(fileLayout));
-            rootLogger.addAppender(fileAppender);
-        }
+    public ExecutionStatus configure(LoggerContext context) {
+        context.reset();
+        context.getLogger(Logger.ROOT_LOGGER_NAME).setLevel(Level.OFF);
         return ExecutionStatus.DO_NOT_INVOKE_NEXT_IF_ANY;
-    }
-
-    private ConsoleAppender<ILoggingEvent> createLoggingConsoleAppender(
-            final LoggerContext lc,
-            final LayoutWrappingEncoder<ILoggingEvent> layoutEncoder
-    ) {
-        return new ConsoleAppender<>() {{
-            setContext(lc);
-            setName("console");
-            setTarget("System.err");
-            setEncoder(layoutEncoder);
-            start();
-        }};
-    }
-
-    private FileAppender<ILoggingEvent> createLoggingFileAppender(
-            final LoggerContext lc,
-            final LayoutWrappingEncoder<ILoggingEvent> layoutEncoder
-    ) {
-        return new FileAppender<>() {{
-            setContext(lc);
-            setName("file");
-            setFile(logFile.getAbsolutePath());
-            setEncoder(layoutEncoder);
-            start();
-        }};
-    }
-
-    private LayoutWrappingEncoder<ILoggingEvent> createLayoutWrappingEncoder(final Layout<ILoggingEvent> l) {
-        return new LayoutWrappingEncoder<>() {{
-            setContext(l.getContext());
-            setLayout(l);
-        }};
-    }
-
-    private PatternLayout createSimpleLoggingLayout(final LoggerContext lc) {
-        final var patternLayout = getPatternLayout();
-        patternLayout.setPattern("%-5level %logger{0} - %msg%n");
-        patternLayout.setContext(lc);
-        patternLayout.start();
-        return patternLayout;
-    }
-
-    private PatternLayout createDetailedLoggingLayout(final LoggerContext lc) {
-        final var patternLayout = getPatternLayout();
-        patternLayout.setPattern("%d{yyyy-MM-dd'T'HH:mm:ss.SSSXX} [%thread] %-5level %logger{36} - %msg%n");
-        patternLayout.setContext(lc);
-        patternLayout.start();
-        return patternLayout;
-    }
-
-    private PatternLayout getPatternLayout() {
-        if (scrubSensitiveInformation) {
-            return new ScrubberPatternLayout();
-        } else {
-            return new PatternLayout();
-        }
     }
 }

@@ -16,12 +16,6 @@
  */
 package org.asamk.signal;
 
-import net.sourceforge.argparse4j.ArgumentParsers;
-import net.sourceforge.argparse4j.DefaultSettings;
-import net.sourceforge.argparse4j.impl.Arguments;
-import net.sourceforge.argparse4j.inf.ArgumentParserException;
-import net.sourceforge.argparse4j.inf.Namespace;
-
 import org.asamk.signal.commands.exceptions.CaptchaRejectedErrorException;
 import org.asamk.signal.commands.exceptions.CommandException;
 import org.asamk.signal.commands.exceptions.IOErrorException;
@@ -29,13 +23,10 @@ import org.asamk.signal.commands.exceptions.RateLimitErrorException;
 import org.asamk.signal.commands.exceptions.UnexpectedErrorException;
 import org.asamk.signal.commands.exceptions.UntrustedKeyErrorException;
 import org.asamk.signal.commands.exceptions.UserErrorException;
-import org.asamk.signal.logging.LogConfigurator;
-import org.asamk.signal.manager.ManagerLogger;
 import org.asamk.signal.util.SecurityProvider;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.slf4j.bridge.SLF4JBridgeHandler;
 
-import java.io.File;
 import java.security.Security;
 
 public class Main {
@@ -45,40 +36,28 @@ public class Main {
         Security.setProperty("crypto.policy", "unlimited");
         installSecurityProviderWorkaround();
 
-        // Load global config early so we can use its values as parser defaults
-        final GlobalConfig globalConfig;
-        try {
-            globalConfig = ConfigLoader.load();
-        } catch (UserErrorException e) {
-            System.exit(handleCommandException(e, null));
-            return;
-        }
-
-        // Configuring the logger needs to happen before any logger is initialized
-        final var loggingConfig = parseLoggingConfig(args, globalConfig);
-        configureLogging(loggingConfig);
-
-        final var parser = App.buildArgumentParser(globalConfig);
+        // Do not read upstream global config: it can enable file logging or D-Bus.
+        // The service-loaded LogConfigurator disables logging before any logger is used.
+        SLF4JBridgeHandler.removeHandlersForRootLogger();
+        SLF4JBridgeHandler.install();
+        final var parser = App.buildArgumentParser(GlobalConfig.DEFAULT);
         final var ns = parser.parseArgsOrFail(args);
 
         int status = 0;
         try {
             new App(ns).init();
         } catch (CommandException e) {
-            status = handleCommandException(e, loggingConfig);
+            status = handleCommandException(e);
         } catch (Throwable e) {
-            e.printStackTrace(System.err);
+            System.err.println("Read-only Signal operation failed (" + e.getClass().getSimpleName() + ").");
             status = 2;
         }
         Shutdown.shutdownComplete();
         System.exit(status);
     }
 
-    private static int handleCommandException(final CommandException e, final LoggingConfig loggingConfig) {
+    private static int handleCommandException(final CommandException e) {
         System.err.println(e.getMessage());
-        if (loggingConfig != null && loggingConfig.verboseLevel > 0 && e.getCause() != null) {
-            e.getCause().printStackTrace(System.err);
-        }
         return getStatusForError(e);
     }
 
@@ -86,62 +65,6 @@ public class Main {
         // Register our own security provider
         Security.insertProviderAt(new SecurityProvider(), 1);
         Security.addProvider(new BouncyCastleProvider());
-    }
-
-    private static LoggingConfig parseLoggingConfig(final String[] args, final GlobalConfig config) {
-        final var nsLog = parseArgs(args, config);
-        if (nsLog == null) {
-            final var verbose = config != null && config.verbose() != null ? config.verbose() : 0;
-            final var logFile = config != null && config.logFile() != null ? new File(config.logFile()) : null;
-            final var scrubLog = config != null && Boolean.TRUE.equals(config.scrubLog());
-            return new LoggingConfig(verbose, logFile, scrubLog);
-        }
-
-        final var verboseLevel = nsLog.getInt("verbose");
-        final var logFile = nsLog.<File>get("log-file");
-        final var scrubLog = nsLog.getBoolean("scrub-log");
-        return new LoggingConfig(verboseLevel, logFile, scrubLog);
-    }
-
-    /**
-     * This method only parses commandline args relevant for logging configuration.
-     */
-    private static Namespace parseArgs(String[] args, final GlobalConfig config) {
-        var parser = ArgumentParsers.newFor("signal-cli", DefaultSettings.VERSION_0_9_0_DEFAULT_SETTINGS)
-                .includeArgumentNamesAsKeysInResult(true)
-                .build()
-                .defaultHelp(false);
-        parser.addArgument("-v", "--verbose")
-                .action(Arguments.count())
-                .setDefault(config == null || config.verbose() == null ? 0 : config.verbose());
-        parser.addArgument("--log-file")
-                .type(File.class)
-                .setDefault(config == null || config.logFile() == null ? null : new File(config.logFile()));
-        parser.addArgument("--scrub-log")
-                .action(Arguments.storeTrue())
-                .setDefault(config == null || config.scrubLog() == null ? false : config.scrubLog());
-
-        try {
-            return parser.parseKnownArgs(args, null);
-        } catch (ArgumentParserException e) {
-            return null;
-        }
-    }
-
-    private static void configureLogging(final LoggingConfig loggingConfig) {
-        LogConfigurator.setVerboseLevel(loggingConfig.verboseLevel);
-        LogConfigurator.setLogFile(loggingConfig.logFile);
-        LogConfigurator.setScrubSensitiveInformation(loggingConfig.scrubLog);
-
-        if (loggingConfig.verboseLevel > 0) {
-            java.util.logging.Logger.getLogger("")
-                    .setLevel(loggingConfig.verboseLevel > 2
-                            ? java.util.logging.Level.FINEST
-                            : java.util.logging.Level.INFO);
-            ManagerLogger.initLogger();
-        }
-        SLF4JBridgeHandler.removeHandlersForRootLogger();
-        SLF4JBridgeHandler.install();
     }
 
     private static int getStatusForError(final CommandException e) {
@@ -156,5 +79,4 @@ public class Main {
         };
     }
 
-    private record LoggingConfig(int verboseLevel, File logFile, boolean scrubLog) {}
 }

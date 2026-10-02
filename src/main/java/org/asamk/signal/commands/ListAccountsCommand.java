@@ -9,6 +9,8 @@ import org.asamk.signal.output.JsonWriter;
 import org.asamk.signal.output.OutputWriter;
 import org.asamk.signal.output.PlainTextWriter;
 
+import java.util.Collection;
+
 public class ListAccountsCommand implements JsonRpcMultiLocalCommand {
 
     @Override
@@ -27,7 +29,11 @@ public class ListAccountsCommand implements JsonRpcMultiLocalCommand {
             final MultiAccountManager c,
             final OutputWriter outputWriter
     ) throws CommandException {
-        final var accountNumbers = c.getAccountNumbers();
+        outputAccounts(c.getAccountNumbers(), outputWriter);
+    }
+
+    /** Read identifiers without opening accounts, starting jobs, or contacting Signal. */
+    public void outputAccounts(final Collection<String> accountNumbers, final OutputWriter outputWriter) {
         switch (outputWriter) {
             case JsonWriter jsonWriter -> {
                 final var jsonAccounts = accountNumbers.stream().map(JsonAccount::new).toList();

@@ -147,12 +147,7 @@ public class CommandUtil {
     }
 
     public static ReceiveConfig getReceiveConfig(final Namespace ns) {
-        final var ignoreAttachments = Boolean.TRUE.equals(ns.getBoolean("ignore-attachments"));
-        final var ignoreStories = Boolean.TRUE.equals(ns.getBoolean("ignore-stories"));
-        final var ignoreAvatars = Boolean.TRUE.equals(ns.getBoolean("ignore-avatars"));
-        final var ignoreStickers = Boolean.TRUE.equals(ns.getBoolean("ignore-stickers"));
-        final var sendReadReceipts = Boolean.TRUE.equals(ns.getBoolean("send-read-receipts"));
-
-        return new ReceiveConfig(ignoreAttachments, ignoreStories, ignoreAvatars, ignoreStickers, sendReadReceipts);
+        // Hard-coded policy: neither config files nor alternate command callers can weaken it.
+        return new ReceiveConfig(true, true, true, true, false);
     }
 }

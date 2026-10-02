@@ -324,8 +324,8 @@ public record MessageEnvelope(
                 if (signalAttachment.isPointer()) {
                     final var a = signalAttachment.asPointer();
                     final var attachmentFile = fileProvider.getFile(a);
-                    return new Attachment(Optional.of(attachmentFile.getName()),
-                            Optional.of(attachmentFile),
+                    return new Attachment(Optional.ofNullable(attachmentFile).map(File::getName),
+                            Optional.ofNullable(attachmentFile),
                             a.getFileName(),
                             a.getContentType(),
                             a.getUploadTimestamp() == 0 ? Optional.empty() : Optional.of(a.getUploadTimestamp()),

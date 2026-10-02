@@ -50,7 +50,6 @@ import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -144,7 +143,7 @@ public class SignalDependencies {
      * This method needs to be called before the first websocket is created
      */
     public void setAllowStories(final boolean allowStories) {
-        this.allowStories = allowStories;
+        this.allowStories = false;
     }
 
     public ServiceEnvironmentConfig getServiceEnvironmentConfig() {
@@ -360,18 +359,7 @@ public class SignalDependencies {
     }
 
     public SignalServiceMessageSender getMessageSender() {
-        return getOrCreate(() -> messageSender,
-                () -> messageSender = new SignalServiceMessageSender(getPushServiceSocket(),
-                        dataStore,
-                        sessionLock,
-                        getMessageApi(),
-                        getKeysApi(),
-                        Optional.empty(),
-                        executor,
-                        ServiceConfig.MAX_ENVELOPE_SIZE,
-                        ServiceConfig.MAX_INCREMENTAL_MACS_PER_ENVELOPE,
-                        () -> true,
-                        getPreKeyRepository()));
+        throw new UnsupportedOperationException("Sending is disabled in signal-cli-readonly");
     }
 
     public List<SecureValueRecovery> getSecureValueRecovery() {

@@ -79,29 +79,15 @@ public class RecipientHelper {
     }
 
     public RecipientId resolveRecipient(final RecipientIdentifier.Single recipient) throws UnregisteredRecipientException {
-        if (recipient instanceof RecipientIdentifier.Uuid(UUID uuid)) {
-            return account.getRecipientResolver().resolveRecipient(ACI.from(uuid));
-        } else if (recipient instanceof RecipientIdentifier.Pni(UUID pni)) {
-            return account.getRecipientResolver().resolveRecipient(PNI.from(pni));
-        } else if (recipient instanceof RecipientIdentifier.Number(String number)) {
-            return account.getRecipientStore().resolveRecipientByNumber(number, () -> {
-                try {
-                    return getRegisteredUserByNumber(number);
-                } catch (Exception e) {
-                    return null;
-                }
-            });
-        } else if (recipient instanceof RecipientIdentifier.Username(String username)) {
-            try {
-                return resolveRecipientByUsernameOrLink(username, false);
-            } catch (Exception e) {
-                throw new UnregisteredRecipientException(new org.asamk.signal.manager.api.RecipientAddress(null,
-                        null,
-                        null,
-                        username));
-            }
-        }
-        throw new AssertionError("Unexpected RecipientIdentifier: " + recipient);
+        final var partial = new org.asamk.signal.manager.storage.recipients.RecipientAddress(
+                recipient.toPartialRecipientAddress());
+        return account.getRecipientStore()
+                .getRecipients(false, Optional.empty(), Set.of(), Optional.empty())
+                .stream()
+                .filter(r -> r.getAddress().matches(partial))
+                .map(r -> r.getRecipientId())
+                .findFirst()
+                .orElseThrow(() -> new UnregisteredRecipientException(recipient.toPartialRecipientAddress()));
     }
 
     public RecipientId resolveRecipientByUsernameOrLink(

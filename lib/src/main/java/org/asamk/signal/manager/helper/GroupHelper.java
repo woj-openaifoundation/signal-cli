@@ -515,40 +515,7 @@ public class GroupHelper {
     }
 
     private void fillOrUpdateGroup(final GroupInfo group, final boolean forceUpdate) {
-        if (!(group instanceof GroupInfoV2 groupInfoV2)) {
-            return;
-        }
-
-        if (!forceUpdate && (groupInfoV2.isPermissionDenied() || groupInfoV2.getGroup() != null)) {
-            return;
-        }
-
-        final var groupSecretParams = GroupSecretParams.deriveFromMasterKey(groupInfoV2.getMasterKey());
-        DecryptedGroup decryptedGroup;
-        try {
-            final var response = context.getGroupV2Helper().getDecryptedGroup(groupSecretParams);
-            if (response == null) {
-                return;
-            }
-            decryptedGroup = response.getGroup();
-            handleDecryptedGroupResponse(groupInfoV2, response);
-        } catch (NotAGroupMemberException e) {
-            groupInfoV2.setPermissionDenied(true);
-            account.getGroupStore().updateGroup(group);
-            return;
-        }
-
-        try {
-            storeProfileKeysFromHistory(groupSecretParams, groupInfoV2, decryptedGroup);
-        } catch (NotAGroupMemberException ignored) {
-        }
-        storeProfileKeysFromMembers(decryptedGroup);
-        final var avatar = decryptedGroup.avatar;
-        if (!avatar.isEmpty()) {
-            downloadGroupAvatar(groupInfoV2.getGroupId(), groupSecretParams, avatar);
-        }
-        groupInfoV2.setGroup(decryptedGroup);
-        account.getGroupStore().updateGroup(group);
+        // Group getters are local-only; refreshing would persist names, membership and avatars.
     }
 
     private void downloadGroupAvatar(GroupIdV2 groupId, GroupSecretParams groupSecretParams, String cdnKey) {

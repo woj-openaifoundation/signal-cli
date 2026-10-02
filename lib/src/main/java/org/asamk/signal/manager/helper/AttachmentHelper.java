@@ -24,7 +24,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -140,26 +139,7 @@ public class AttachmentHelper {
     }
 
     public void downloadAttachment(final SignalServiceAttachment attachment) {
-        if (!attachment.isPointer()) {
-            logger.warn("Invalid state, can't store an attachment stream.");
-        }
-
-        var pointer = attachment.asPointer();
-        if (pointer.getPreview().isPresent()) {
-            final var preview = pointer.getPreview().get();
-            try {
-                attachmentStore.storeAttachmentPreview(pointer,
-                        outputStream -> outputStream.write(preview, 0, preview.length));
-            } catch (IOException e) {
-                logger.warn("Failed to download attachment preview, ignoring: {}", e.getMessage());
-            }
-        }
-
-        try {
-            attachmentStore.storeAttachment(pointer, outputStream -> this.retrieveAttachment(pointer, outputStream));
-        } catch (IOException e) {
-            logger.warn("Failed to download attachment ({}), ignoring: {}", pointer.getRemoteId(), e.getMessage());
-        }
+        throw new UnsupportedOperationException("Attachment downloads are disabled in signal-cli-readonly");
     }
 
     void retrieveAttachment(SignalServiceAttachment attachment, OutputStream outputStream) throws IOException {
@@ -167,27 +147,7 @@ public class AttachmentHelper {
     }
 
     public void retrieveAttachment(SignalServiceAttachment attachment, AttachmentHandler consumer) throws IOException {
-        if (attachment.isStream()) {
-            var input = attachment.asStream().getInputStream();
-            // don't close input stream here, it might be reused later (e.g. with contact sync messages ...)
-            consumer.handle(input);
-            return;
-        }
-
-        final var pointer = attachment.asPointer();
-        logger.debug("Retrieving attachment {} with size {}", pointer.getRemoteId(), pointer.getSize());
-        var tmpFile = IOUtils.createTempFile();
-        try (var input = retrieveAttachmentAsStream(pointer, tmpFile)) {
-            consumer.handle(input);
-        } finally {
-            try {
-                Files.delete(tmpFile.toPath());
-            } catch (IOException e) {
-                logger.warn("Failed to delete received attachment temp file “{}”, ignoring: {}",
-                        tmpFile,
-                        e.getMessage());
-            }
-        }
+        throw new IOException("Attachment downloads are disabled in signal-cli-readonly");
     }
 
     private InputStream retrieveAttachmentAsStream(

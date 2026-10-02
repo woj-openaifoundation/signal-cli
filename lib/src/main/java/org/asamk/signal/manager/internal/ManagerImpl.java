@@ -77,7 +77,6 @@ import org.asamk.signal.manager.config.ServiceEnvironmentConfig;
 import org.asamk.signal.manager.helper.AccountFileUpdater;
 import org.asamk.signal.manager.helper.Context;
 import org.asamk.signal.manager.helper.RecipientHelper.RegisteredUser;
-import org.asamk.signal.manager.jobs.RefreshRecipientsJob;
 import org.asamk.signal.manager.jobs.SyncStorageJob;
 import org.asamk.signal.manager.storage.AttachmentStore;
 import org.asamk.signal.manager.storage.AvatarStore;
@@ -147,7 +146,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
@@ -256,12 +254,9 @@ public class ManagerImpl implements Manager {
     }
 
     public void checkAccountState() throws IOException {
-        context.getAccountHelper().checkAccountState();
-        final var lastRecipientsRefresh = account.getLastRecipientsRefresh();
-        if (lastRecipientsRefresh == null
-                || lastRecipientsRefresh < System.currentTimeMillis() - TimeUnit.DAYS.toMillis(1)) {
-            context.getJobExecutor().enqueueJob(new RefreshRecipientsJob());
-            context.getAccountHelper().checkWhoAmiI();
+        // Loading a local account must not update remote attributes or refresh profiles.
+        if (account.getAci() == null || !account.isRegistered()) {
+            throw new IOException("A linked, registered account is required");
         }
     }
 
@@ -1673,22 +1668,6 @@ public class ManagerImpl implements Manager {
         if (!recipients.isEmpty() && recipientIds.isEmpty()) {
             return List.of();
         }
-        // refresh profiles of explicitly given recipients
-        if (recipientIds.isEmpty()) {
-            final var rIds = account.getRecipientStore()
-                    .getRecipients(onlyContacts, blocked, recipientIds, name)
-                    .stream()
-                    .filter(r -> r.isRegistered())
-                    .map(r -> r.getRecipientId())
-                    .toList();
-            try {
-                context.getProfileHelper().getRecipientProfiles(rIds);
-            } catch (Exception e) {
-                logger.warn("Failed to refresh profiles for recipients", e);
-            }
-        } else {
-            context.getProfileHelper().refreshRecipientProfiles(recipientIds);
-        }
         return account.getRecipientStore()
                 .getRecipients(onlyContacts, blocked, recipientIds, name)
                 .stream()
@@ -1723,7 +1702,7 @@ public class ManagerImpl implements Manager {
             }
         }
 
-        final var profile = context.getProfileHelper().getRecipientProfile(recipientId);
+        final var profile = account.getProfileStore().getProfile(recipientId);
         if (profile != null) {
             return profile.getDisplayName();
         }
