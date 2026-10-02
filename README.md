@@ -1,6 +1,7 @@
 # signal-cli: read-only context fork
 
-This fork exposes only on-demand receiving and local metadata queries. Sending,
+This fork exposes on-demand receiving, local metadata queries, and an explicit
+`link` command for initial account setup. Sending,
 editing, RPC, daemon mode, message caching, media downloads and application logs
 are disabled. It is based on upstream **v0.14.8**.
 

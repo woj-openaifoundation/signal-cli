@@ -8,11 +8,13 @@ import com.google.zxing.qrcode.QRCodeWriter;
 import net.sourceforge.argparse4j.inf.Namespace;
 import net.sourceforge.argparse4j.inf.Subparser;
 
+import org.asamk.signal.OutputType;
 import org.asamk.signal.commands.exceptions.CommandException;
 import org.asamk.signal.commands.exceptions.IOErrorException;
 import org.asamk.signal.commands.exceptions.UserErrorException;
 import org.asamk.signal.manager.ProvisioningManager;
 import org.asamk.signal.manager.api.UserAlreadyExistsException;
+import org.asamk.signal.output.JsonWriter;
 import org.asamk.signal.output.OutputWriter;
 import org.asamk.signal.output.PlainTextWriter;
 import org.slf4j.Logger;
@@ -20,6 +22,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.List;
+import java.util.Map;
+import java.util.SequencedCollection;
 import java.util.concurrent.TimeoutException;
 
 public class LinkCommand implements ProvisioningCommand {
@@ -33,8 +38,13 @@ public class LinkCommand implements ProvisioningCommand {
 
     @Override
     public void attachToSubparser(final Subparser subparser) {
-        subparser.help("Link to an existing device, instead of registering a new number.");
+        subparser.help("Setup only: link this read-only client by scanning a QR code in your Signal app.");
         subparser.addArgument("-n", "--name").help("Specify a name to describe this new device.");
+    }
+
+    @Override
+    public SequencedCollection<OutputType> getSupportedOutputTypes() {
+        return List.of(OutputType.JSON, OutputType.PLAIN_TEXT);
     }
 
     @Override
@@ -43,30 +53,36 @@ public class LinkCommand implements ProvisioningCommand {
             final ProvisioningManager m,
             final OutputWriter outputWriter
     ) throws CommandException {
-        final var writer = (PlainTextWriter) outputWriter;
+        if (ns.getString("account") != null) {
+            throw new UserErrorException("Do not specify --account for link; select the account in your Signal app.");
+        }
 
         var deviceName = ns.getString("name");
         if (deviceName == null) {
-            deviceName = "cli";
+            deviceName = "signal-cli-readonly";
         }
         try {
             final URI deviceLinkUri = m.getDeviceLinkUri();
-            if (System.console() != null) {
-                printQrCode(writer, deviceLinkUri.toString());
+            switch (outputWriter) {
+                case JsonWriter writer -> writer.write(Map.of("type", "link", "uri", deviceLinkUri.toString()));
+                case PlainTextWriter writer -> {
+                    if (System.console() != null) {
+                        printQrCode(writer, deviceLinkUri.toString());
+                    }
+                    writer.println("{}", deviceLinkUri);
+                }
             }
-            writer.println("{}", deviceLinkUri);
-            var number = m.finishDeviceLink(deviceName);
-            writer.println("Associated with: {}", number);
+            m.finishDeviceLink(deviceName);
+            switch (outputWriter) {
+                case JsonWriter writer -> writer.write(Map.of("type", "linked"));
+                case PlainTextWriter writer -> writer.println("Read-only client linked.");
+            }
         } catch (TimeoutException e) {
             throw new UserErrorException("Link request timed out, please try again.");
         } catch (IOException e) {
-            throw new IOErrorException("Link request error: " + e.getMessage(), e);
+            throw new IOErrorException("Link request failed. Run link again to retry setup.", e);
         } catch (UserAlreadyExistsException e) {
-            throw new UserErrorException("The user "
-                    + e.getNumber()
-                    + " already exists\nDelete \""
-                    + e.getFileName()
-                    + "\" before trying again.");
+            throw new UserErrorException("This account is already linked. Use the existing account state.");
         }
     }
 

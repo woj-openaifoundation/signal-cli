@@ -20,15 +20,14 @@ import org.asamk.signal.manager.Manager;
 import org.asamk.signal.manager.ProvisioningManager;
 import org.asamk.signal.manager.Settings;
 import org.asamk.signal.manager.api.UserAlreadyExistsException;
+import org.asamk.signal.manager.api.TrustNewIdentity;
 import org.asamk.signal.manager.config.ServiceConfig;
 import org.asamk.signal.manager.config.ServiceEnvironmentConfig;
 import org.asamk.signal.manager.storage.SignalAccount;
 import org.asamk.signal.manager.storage.accounts.AccountsStore;
 import org.asamk.signal.manager.util.KeyUtils;
-import org.signal.core.models.AccountEntropyPool;
 import org.signal.core.models.ServiceId.ACI;
 import org.signal.core.models.ServiceId.PNI;
-import org.signal.core.models.backup.MediaRootBackupKey;
 import org.signal.core.util.crypto.DeviceNameCipher;
 import org.signal.libsignal.protocol.IdentityKey;
 import org.signal.libsignal.protocol.IdentityKeyPair;
@@ -72,6 +71,7 @@ import static org.asamk.signal.manager.util.Utils.handleResponseException;
 public class ProvisioningManagerImpl implements ProvisioningManager, Closeable {
 
     private static final Logger logger = LoggerFactory.getLogger(ProvisioningManagerImpl.class);
+    private static final Settings READ_ONLY_SETTINGS = new Settings(TrustNewIdentity.ON_FIRST_USE, true);
 
     private final PathConfig pathConfig;
     private final ServiceEnvironmentConfig serviceEnvironmentConfig;
@@ -131,7 +131,7 @@ public class ProvisioningManagerImpl implements ProvisioningManager, Closeable {
     public String finishDeviceLink(String deviceName) throws IOException, TimeoutException, UserAlreadyExistsException {
         SecondaryProvisioningCipher.ProvisioningDecryptResult<ProvisionMessage> decryptResult;
         try {
-            decryptResult = messageFuture.get(120, TimeUnit.SECONDS);
+            decryptResult = messageFuture.get(300, TimeUnit.SECONDS);
         } catch (java.util.concurrent.TimeoutException e) {
             throw new TimeoutException("Timed out waiting for provisioning message");
         } catch (InterruptedException e) {
@@ -185,10 +185,6 @@ public class ProvisioningManagerImpl implements ProvisioningManager, Closeable {
         var encryptedDeviceName = deviceName == null
                 ? null
                 : DeviceNameCipher.encryptDeviceName(deviceName.getBytes(StandardCharsets.UTF_8), aciIdentity);
-        var accountEntropyPool = msg.accountEntropyPool == null ? null : new AccountEntropyPool(msg.accountEntropyPool);
-        var mediaRootBackupKey = msg.mediaRootBackupKey == null
-                ? null
-                : new MediaRootBackupKey(msg.mediaRootBackupKey.toByteArray());
 
         SignalAccount account = null;
         var cleanUpPartialAccountOnFailure = false;
@@ -198,10 +194,10 @@ public class ProvisioningManagerImpl implements ProvisioningManager, Closeable {
                 account = SignalAccount.createLinkedAccount(pathConfig.dataPath(),
                         accountPath,
                         serviceEnvironmentConfig.type(),
-                        Settings.DEFAULT);
+                        READ_ONLY_SETTINGS);
                 cleanUpPartialAccountOnFailure = true;
             } else {
-                account = SignalAccount.load(pathConfig.dataPath(), accountPath, true, Settings.DEFAULT);
+                account = SignalAccount.load(pathConfig.dataPath(), accountPath, true, READ_ONLY_SETTINGS);
                 cleanUpPartialAccountOnFailure = false;
             }
 
@@ -213,13 +209,10 @@ public class ProvisioningManagerImpl implements ProvisioningManager, Closeable {
                     aciIdentity,
                     pniIdentity,
                     profileKey,
-                    accountEntropyPool,
-                    msg.authCredentialSalt == null ? null : msg.authCredentialSalt.toByteArray(),
-                    mediaRootBackupKey);
-
-            if (msg.readReceipts != null) {
-                account.getConfigurationStore().setReadReceipts(msg.readReceipts);
-            }
+                    null,
+                    null,
+                    null);
+            // Do not retain backup/storage credentials or read-receipt preferences.
 
             final var aciPreKeys = generatePreKeysForType(account.getAccountData(ServiceIdType.ACI));
             final var pniPreKeys = generatePreKeysForType(account.getAccountData(ServiceIdType.PNI));
@@ -319,7 +312,7 @@ public class ProvisioningManagerImpl implements ProvisioningManager, Closeable {
     private boolean canRelinkExistingAccount(final String accountPath) throws IOException {
         final SignalAccount signalAccount;
         try {
-            signalAccount = SignalAccount.load(pathConfig.dataPath(), accountPath, false, Settings.DEFAULT);
+            signalAccount = SignalAccount.load(pathConfig.dataPath(), accountPath, false, READ_ONLY_SETTINGS);
         } catch (IOException e) {
             logger.debug("Account in use or failed to load.", e);
             return false;

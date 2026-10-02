@@ -8,6 +8,7 @@ public final class Commands {
 
     private static final Map<String, Command> commands = Map.of(
             "receive", new ReceiveCommand(),
+            "link", new LinkCommand(),
             "listAccounts", new ListAccountsCommand(),
             "listContacts", new ListContactsCommand(),
             "listGroups", new ListGroupsCommand(),

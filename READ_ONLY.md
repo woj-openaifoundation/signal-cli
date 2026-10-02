@@ -1,15 +1,20 @@
 # Read-only Signal context fork
 
-Based on upstream signal-cli v0.14.8. This distribution is intended for an
-already linked signal-cli account and explicit, on-demand context retrieval.
+Based on upstream signal-cli v0.14.8. This distribution supports explicit device
+linking and on-demand context retrieval.
 It does not read the Signal Desktop database or the history on a phone.
 
 ## Boundaries
 
-- Only `receive`, `listAccounts`, `listContacts`, `listGroups`, `listIdentities`,
-  and `version` are exposed. JSON is the default output format.
+- Routine commands are `receive`, `listAccounts`, `listContacts`, `listGroups`,
+  `listIdentities`, and `version`. JSON is the default output format.
+- `link` is the explicit setup exception: it enrolls a linked device after a QR
+  scan on your phone. It stores required account keys and uploads pre-keys, but
+  does not advertise history transfer, request contact/group sync or receive
+  messages. Backup/storage credentials and read-receipt preferences received
+  during enrollment are not retained.
 - Sending messages, reactions, receipts, typing indicators, calls, account or
-  group edits, registration/linking, daemon mode, D-Bus and JSON-RPC are not
+  group edits, primary-account registration, daemon mode, D-Bus and JSON-RPC are not
   exposed. Global config files are ignored so they cannot enable unsafe defaults.
 - Incoming message envelopes are held in memory, not cached on disk. No
   attachment, long-text attachment, avatar, sticker, story, contact-sync or
@@ -55,15 +60,27 @@ must be kept current with Signal's protocol changes.
 After installation, inspect the restricted command surface without opening an account:
 
 ```sh
-signal-cli --version
-signal-cli --help
+signal-cli-readonly --version
+signal-cli-readonly --help
 ```
+
+To link to your existing Signal account:
+
+```sh
+signal-cli-readonly -o plain-text link --name signal-cli-readonly
+```
+
+Scan the terminal QR code from Signal on your phone under **Settings > Linked
+devices > Link new device**. JSON mode emits a `link` event with a `uri`, followed
+by a `linked` event on completion, without printing your phone number. A fresh
+link attempt is required if the QR code expires. The `link` command never starts
+message retrieval. Existing valid local accounts are not overwritten.
 
 To explicitly retrieve pending messages into the calling process, after accepting
 the retention boundaries above:
 
 ```sh
-signal-cli receive --timeout 3 --max-messages 50
+signal-cli-readonly receive --timeout 3 --max-messages 50
 ```
 
 Select an existing account with `-a` or an existing account directory with
@@ -81,15 +98,9 @@ export JAVA_HOME="$(brew --prefix openjdk@25)/libexec/openjdk.jdk/Contents/Home"
 ```
 
 The installer puts the distribution under Homebrew's prefix at
-`opt/signal-cli-readonly`, and creates `bin/signal-cli-readonly`. To make it the
-default `signal-cli`, first run `brew unlink signal-cli`, then create a symlink
-from `bin/signal-cli` to `bin/signal-cli-readonly`. The upstream Homebrew package
-can remain installed for rollback; it is a separate, unrestricted executable.
-Future Homebrew relinking can change which executable the `signal-cli` name runs.
-Use `signal-cli-readonly` for an unambiguous path to this fork.
-
-To restore the upstream default, remove only the `bin/signal-cli` symlink pointing
-to this fork, then run `brew link signal-cli`. This does not change account data.
+`opt/signal-cli-readonly`, and creates only `bin/signal-cli-readonly`. It does not
+create a `signal-cli` alias. The original Homebrew `signal-cli` package can be
+uninstalled separately without deleting the account-state directory.
 
 Tests use synthetic data and temporary directories. Installation itself neither
 links an account nor receives messages.

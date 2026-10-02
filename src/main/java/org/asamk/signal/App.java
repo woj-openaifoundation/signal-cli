@@ -9,11 +9,13 @@ import org.asamk.signal.commands.Command;
 import org.asamk.signal.commands.CommandHandler;
 import org.asamk.signal.commands.Commands;
 import org.asamk.signal.commands.LocalCommand;
+import org.asamk.signal.commands.LinkCommand;
 import org.asamk.signal.commands.exceptions.CommandException;
 import org.asamk.signal.commands.exceptions.IOErrorException;
 import org.asamk.signal.commands.exceptions.UnexpectedErrorException;
 import org.asamk.signal.commands.exceptions.UserErrorException;
 import org.asamk.signal.manager.Manager;
+import org.asamk.signal.manager.ProvisioningManager;
 import org.asamk.signal.manager.Settings;
 import org.asamk.signal.manager.SignalAccountFiles;
 import org.asamk.signal.manager.api.AccountCheckException;
@@ -83,10 +85,13 @@ public class App {
             throw new UserErrorException("Command is unavailable in this read-only distribution.");
         }
 
+        var account = ns.getString("account");
+        if (command instanceof LinkCommand && account != null) {
+            throw new UserErrorException("Do not specify --account for link; select the account in your Signal app.");
+        }
+
         final var outputWriter = getOutputWriter(command);
         final var commandHandler = new CommandHandler(ns, outputWriter);
-
-        var account = ns.getString("account");
 
         if (command instanceof org.asamk.signal.commands.VersionCommand versionCommand) {
             versionCommand.handleCommand(ns, (Manager) null, outputWriter);
@@ -107,7 +112,24 @@ public class App {
             throw new UserErrorException("Missing required native library dependency: libsignal-client");
         }
 
+        if (command instanceof LinkCommand) {
+            linkAccount(ns, signalAccountFiles.initProvisioningManager(), outputWriter);
+            return;
+        }
+
         handleCommand(command, commandHandler, account, signalAccountFiles);
+    }
+
+    static void linkAccount(
+            final Namespace namespace,
+            final ProvisioningManager provisioningManager,
+            final OutputWriter outputWriter
+    ) throws CommandException {
+        try (provisioningManager) {
+            new LinkCommand().handleCommand(namespace, provisioningManager, outputWriter);
+        } catch (IOException e) {
+            throw new IOErrorException("Failed to close the linking session.", e);
+        }
     }
 
     static void rejectUnsafeNamespace(final Namespace ns) throws UserErrorException {
@@ -149,7 +171,7 @@ public class App {
             throw new IOErrorException("Failed to load local accounts file", e);
         }
         if (accounts.isEmpty()) {
-            throw new UserErrorException("No linked account in this state directory. Use --data-dir with an existing linked signal-cli account.");
+            throw new UserErrorException("No linked account in this state directory. Run link to pair with your Signal app, or use --data-dir with an existing account.");
         } else if (accounts.size() > 1) {
             throw new UserErrorException("Multiple users found, you need to specify an account (phone number) with -a");
         }

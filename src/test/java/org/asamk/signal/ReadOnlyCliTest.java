@@ -34,7 +34,7 @@ class ReadOnlyCliTest {
 
     @Test
     void onlyReviewedCommandsAreAvailable() {
-        assertEquals(Set.of("receive", "listAccounts", "listContacts", "listGroups", "listIdentities", "version"),
+        assertEquals(Set.of("link", "receive", "listAccounts", "listContacts", "listGroups", "listIdentities", "version"),
                 Commands.getCommandSubparserAttachers().keySet());
         assertNull(Commands.getCommand(null));
         assertThrows(UnsupportedOperationException.class,
@@ -44,7 +44,7 @@ class ReadOnlyCliTest {
     @ParameterizedTest
     @ValueSource(strings = {"send", "sendReaction", "sendReceipt", "sendTyping", "sendStory", "remoteDelete",
             "updateAccount", "updateProfile", "updateContact", "updateGroup", "updateConfiguration", "trust",
-            "joinGroup", "quitGroup", "block", "unblock", "register", "verify", "unregister", "link", "startLink",
+            "joinGroup", "quitGroup", "block", "unblock", "register", "verify", "unregister", "startLink",
             "finishLink", "addDevice", "removeDevice", "deleteLocalAccountData", "sendContacts", "sendSyncRequest",
             "sendPaymentNotification", "sendMessageRequestResponse", "addStickerPack", "uploadStickerPack",
             "startCall", "acceptCall", "rejectCall", "hangupCall", "daemon", "jsonRpc", "getAttachment", "getAvatar",
@@ -66,6 +66,23 @@ class ReadOnlyCliTest {
     void removedGlobalOptionsAreRejected(final String option) {
         assertThrows(ArgumentParserException.class,
                 () -> App.buildArgumentParser(null).parseArgs(new String[]{option, "receive"}));
+    }
+
+    @Test
+    void linkIsExplicitSetupAndDefaultsToJson() throws Exception {
+        final var namespace = App.buildArgumentParser(null).parseArgs(new String[]{"link", "--name", "Context"});
+        assertEquals("link", namespace.getString("command"));
+        assertEquals("Context", namespace.getString("name"));
+        assertEquals(OutputType.JSON, namespace.get("output"));
+    }
+
+    @Test
+    void linkingWithAnAccountOptionFailsBeforeStateOrNetworkAccess() throws Exception {
+        final var unusedState = temporaryDirectory.resolve("unused-link-state");
+        final var namespace = App.buildArgumentParser(null).parseArgs(new String[]{"--data-dir", unusedState.toString(),
+                "--account", "+12025550123", "link"});
+        assertThrows(UserErrorException.class, () -> new App(namespace).init());
+        assertFalse(Files.exists(unusedState));
     }
 
     @Test

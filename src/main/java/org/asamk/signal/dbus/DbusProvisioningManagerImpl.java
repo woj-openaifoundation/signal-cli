@@ -37,6 +37,11 @@ public class DbusProvisioningManagerImpl implements ProvisioningManager {
     }
 
     @Override
+    public void close() {
+        // The D-Bus caller owns the shared connection. This transport is unavailable in the read-only CLI.
+    }
+
+    @Override
     public URI getDeviceLinkUri() throws TimeoutException, IOException {
         try {
             deviceLinkUri = new URI(signalControl.startLink());
